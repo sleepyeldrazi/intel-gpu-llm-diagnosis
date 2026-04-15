@@ -47,6 +47,33 @@ cd repos
 - The 9B dense model fits entirely in A770 VRAM, so sync/graph/reorder optimizations
   don't exercise the bottleneck path these patches target
 
+### llama-bench Results (Baseline, Unpatched)
+
+| Model | pp512 | tg128 |
+|-------|-------|-------|
+| Qwen3.5-9B Q4_0 (5.0 GiB) | 723.39 ± 6.40 | 29.93 ± 0.59 |
+| Qwen3.5-9B Q8_0 (8.86 GiB) | 702.46 ± 8.84 | 31.18 ± 0.11 |
+
+**Bandwidth Utilization:**
+- Q4_0: 29.93 t/s ÷ (512 GB/s ÷ 5.0 GiB) = **29.2%** of theoretical max
+- Q8_0: 31.18 t/s ÷ (512 GB/s ÷ 8.86 GiB) = **54.0%** of theoretical max
+- Q8_0 achieves nearly 2x better utilization than Q4_0 — suggests different kernel paths
+
+### Cross-Platform Comparison (from online research)
+
+| GPU / Backend | Model | Quant | Gen t/s | BW Utilization |
+|---------------|-------|-------|---------|----------------|
+| Arc A770 SYCL (ours) | Qwen3.5-9B | Q4_0 | **30** | **29%** |
+| Arc A770 SYCL (Intel CI) | llama-2-7B | Q4_0 | **42-55** | **30-39%** |
+| Arc A770 Vulkan | Llama 3.1-8B | Q4_K_M | **42-54** | **47-75%** |
+| RTX 3060 (CUDA) | Llama 3.1-8B | Q4_K_M | **52** | **~72%** |
+| RTX 4060 (CUDA) | Llama 3.1-8B | Q4_K_M | **38** | **~65%** |
+
+**Conclusion:** The SYCL backend fundamentally achieves only ~30% bandwidth utilization
+vs ~53% on Vulkan and ~72% on CUDA. Our patches don't move the needle because the
+bottleneck is in the SYCL submission model (1-op-at-a-time with OS-level .wait()),
+not in the specific parameters we tuned.
+
 ### Qwen3.5-35B-A3B (MoE, `--cpu-moe`)
 
 | Config | Status |
