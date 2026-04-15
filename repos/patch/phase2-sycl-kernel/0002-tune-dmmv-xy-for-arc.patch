@@ -1,0 +1,17 @@
+diff --git a/ggml/src/ggml-sycl/presets.hpp b/ggml/src/ggml-sycl/presets.hpp
+index dc4dad1..a2e4ce2 100644
+--- a/ggml/src/ggml-sycl/presets.hpp
++++ b/ggml/src/ggml-sycl/presets.hpp
+@@ -54,10 +54,10 @@
+ 
+ // dmmv = dequantize_mul_mat_vec
+ #ifndef GGML_SYCL_DMMV_X
+-#define GGML_SYCL_DMMV_X 32
++#define GGML_SYCL_DMMV_X 64
+ #endif
+ #ifndef GGML_SYCL_MMV_Y
+-#define GGML_SYCL_MMV_Y 1
++#define GGML_SYCL_MMV_Y 2
+ #endif
+ 
+ #ifndef K_QUANTS_PER_ITERATION
