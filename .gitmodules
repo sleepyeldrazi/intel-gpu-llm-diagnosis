@@ -1,0 +1,37 @@
+[submodule "repos/llama.cpp"]
+	path = repos/llama.cpp
+	url = https://github.com/ggml-org/llama.cpp.git
+[submodule "repos/ipex-llm"]
+	path = repos/ipex-llm
+	url = https://github.com/intel/ipex-llm.git
+[submodule "repos/intel-extension-for-pytorch"]
+	path = repos/intel-extension-for-pytorch
+	url = https://github.com/intel/intel-extension-for-pytorch.git
+[submodule "repos/compute-runtime"]
+	path = repos/compute-runtime
+	url = https://github.com/intel/compute-runtime.git
+[submodule "repos/intel-graphics-compiler"]
+	path = repos/intel-graphics-compiler
+	url = https://github.com/intel/intel-graphics-compiler.git
+[submodule "repos/oneDNN"]
+	path = repos/oneDNN
+	url = https://github.com/oneapi-src/oneDNN.git
+[submodule "repos/vllm"]
+	path = repos/vllm
+	url = https://github.com/vllm-project/vllm.git
+[submodule "repos/vllm-xpu-kernels"]
+	path = repos/vllm-xpu-kernels
+	url = https://github.com/vllm-project/vllm-xpu-kernels.git
+[submodule "repos/level-zero"]
+	path = repos/level-zero
+	url = https://github.com/oneapi-src/level-zero.git
+[submodule "repos/llvm"]
+	path = repos/llvm
+	url = https://github.com/intel/llvm.git
+	branch = sycl
+[submodule "repos/openvino"]
+	path = repos/openvino
+	url = https://github.com/openvinotoolkit/openvino.git
+[submodule "repos/sycl-tla"]
+	path = repos/sycl-tla
+	url = https://github.com/intel/sycl-tla.git
