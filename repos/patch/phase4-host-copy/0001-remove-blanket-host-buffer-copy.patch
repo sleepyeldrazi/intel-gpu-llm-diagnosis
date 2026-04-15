@@ -1,0 +1,48 @@
+diff --git a/ggml/src/ggml-sycl/ggml-sycl.cpp b/ggml/src/ggml-sycl/ggml-sycl.cpp
+index ea79d25..7282ba9 100644
+--- a/ggml/src/ggml-sycl/ggml-sycl.cpp
++++ b/ggml/src/ggml-sycl/ggml-sycl.cpp
+@@ -64,6 +64,7 @@ int g_ggml_sycl_disable_dnn = 0;
+ int g_ggml_sycl_prioritize_dmmv = 0;
+ int g_ggml_sycl_use_async_mem_op = 0;
+ int g_ggml_sycl_enable_flash_attention = 1;
++int g_ggml_sycl_mmap_workaround = 0;
+ 
+ 
+ static ggml_sycl_device_info ggml_sycl_init() {
+@@ -223,6 +224,7 @@ static void ggml_check_sycl() try {
+ #else
+         g_ggml_sycl_enable_flash_attention = 0;
+ #endif
++        g_ggml_sycl_mmap_workaround = get_sycl_env("GGML_SYCL_MMAP_WORKAROUND", 0);
+ 
+         GGML_SYCL_DEBUG("[SYCL] call ggml_check_sycl\n");
+ 
+@@ -459,16 +461,17 @@ static void ggml_backend_sycl_buffer_set_tensor(ggml_backend_buffer_t buffer,
+     ggml_sycl_set_device(ctx->device);
+     auto stream = &(dpct::dev_mgr::instance().get_device(ctx->device).default_queue());
+     SYCL_CHECK(CHECK_TRY_ERROR(dpct::dev_mgr::instance().get_device(ctx->device).queues_wait_and_throw()));
+-#ifndef _WIN32
+-    // Note: Use host buffer to save the data from mmap(), then copy to device. It's workaround for mmap() issue on PVC GPU.
+-    // This function will be called during load model from disk. Use memory buffer replace dynamic won't save more time and brings potential memory leak risk here.
+-    char * host_buf = (char *) malloc(size);
+-    memcpy(host_buf, data, size);
+-    SYCL_CHECK(CHECK_TRY_ERROR((*stream).memcpy((char *) tensor->data + offset, host_buf, size).wait()));
+-    free(host_buf);
+-#else
+-    SYCL_CHECK(CHECK_TRY_ERROR((*stream).memcpy((char *) tensor->data + offset, data, size).wait()));
+-#endif
++    // Host-buffer copy was a workaround for mmap() issues on PVC GPUs.
++    // It penalized all Linux Intel GPUs with an extra malloc/memcpy/free per set_tensor.
++    // Now opt-in via GGML_SYCL_MMAP_WORKAROUND=1 (only needed for PVC).
++    if (g_ggml_sycl_mmap_workaround) {
++        char * host_buf = (char *) malloc(size);
++        memcpy(host_buf, data, size);
++        SYCL_CHECK(CHECK_TRY_ERROR((*stream).memcpy((char *) tensor->data + offset, host_buf, size).wait()));
++        free(host_buf);
++    } else {
++        SYCL_CHECK(CHECK_TRY_ERROR((*stream).memcpy((char *) tensor->data + offset, data, size).wait()));
++    }
+ }
+ catch (sycl::exception const &exc) {
+   std::cerr << exc.what() << "Exception caught at file:" << __FILE__

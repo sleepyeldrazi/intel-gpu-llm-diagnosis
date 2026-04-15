@@ -46,8 +46,10 @@ apply_phase() {
         1) phase_dir="phase1-sycl-sync"; PHASE_NAME="SYCL Sync (graph + async)" ;;
         2) phase_dir="phase2-sycl-kernel"; PHASE_NAME="SYCL Kernel (VER_GEN + DMMV tuning)" ;;
         3) phase_dir="phase3-vulkan-intel"; PHASE_NAME="Vulkan Intel (Arc 140T Xe2 override)" ;;
+        4) phase_dir="phase4-host-copy"; PHASE_NAME="Host copy (remove PVC blanket workaround)" ;;
         *)
             echo -e "${RED}Unknown phase: $phase_num${NC}"
+            echo "Valid phases: 1, 2, 3, 4"
             exit 1
             ;;
     esac
@@ -120,13 +122,13 @@ if [[ "$PHASE_ARG" == "all" ]]; then
     total_fail=0
 
     if [[ $REVERSE -eq 1 ]]; then
-        for p in 3 2 1; do
+        for p in 4 3 2 1; do
             echo -e "${BLUE}[Phase $p]${NC}"
             apply_phase $p || ((total_fail++)) || true
             echo ""
         done
     else
-        for p in 1 2 3; do
+        for p in 1 2 3 4; do
             echo -e "${BLUE}[Phase $p]${NC}"
             apply_phase $p || ((total_fail++)) || true
             echo ""
