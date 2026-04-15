@@ -16,6 +16,7 @@ The root causes are multi-layered: missing kernel optimizations in `llama.cpp`, 
 ## Empirical Findings
 
 - **[Empirical Findings](empirical_findings.md)** — Real-world benchmarks and configurations from an Arc A770 + RX 580 system running llama.cpp with Qwen3.5-35B-A3B MoE. Includes driver setup (xe vs i915), SYCL/Vulkan status, performance tables, and working/broken configuration matrix.
+- **[SYCL Optimization Analysis](sycl_optimization_analysis.md)** — Deep-dive into why the SYCL backend is slow: 6 root causes (double-buffered memory, disabled graph execution, blocking `.wait()` calls, DPCT translation artifacts), Vulkan vs SYCL submission architecture comparison, kernel dispatch issues, and a prioritized improvement roadmap.
 
 ## Overviews
 
