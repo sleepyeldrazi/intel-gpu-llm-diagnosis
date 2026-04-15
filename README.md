@@ -13,6 +13,10 @@ Intel Arc GPUs look great on paper for LLM inference: ample VRAM, wide memory bu
 
 The root causes are multi-layered: missing kernel optimizations in `llama.cpp`, a fragmented Intel software stack (five semi-independent efforts that don't interoperate), quantization-specific dispatch path bugs, and an overall underinvestment in open-source kernel development for Intel GPU architectures.
 
+## Empirical Findings
+
+- **[Empirical Findings](empirical_findings.md)** — Real-world benchmarks and configurations from an Arc A770 + RX 580 system running llama.cpp with Qwen3.5-35B-A3B MoE. Includes driver setup (xe vs i915), SYCL/Vulkan status, performance tables, and working/broken configuration matrix.
+
 ## Overviews
 
 Each overview was independently produced by a different LLM, analyzing community issues, kernel source code, driver stacks, and benchmark data:
