@@ -7,87 +7,109 @@ blind spots are caught through cross-review.
 ## Quick Start
 
 ```bash
-# Apply all phases at once:
+# Apply one phase at a time (recommended):
 cd repos
-./patch/apply.sh
+./patch/apply-phase.sh 1              # Phase 1: SYCL graph default
+./patch/apply-phase.sh 2              # Phase 2: Kernel tuning (VER_GEN + DMMV)
+./patch/apply-phase.sh 3              # Phase 3: Vulkan Arc 140T fix (independent)
+./patch/apply-phase.sh 4              # Phase 4: Host-buffer copy opt-in
 
-# Apply one phase at a time (recommended for testing):
-./patch/apply-phase.sh 1              # Apply phase 1
-./patch/apply-phase.sh 2              # Apply phase 2 (after testing phase 1)
-./patch/apply-phase.sh 3              # Apply phase 3 (after testing phase 2)
-
-# Dry-run / reverse:
-./patch/apply-phase.sh 1 --dry-run
-./patch/apply-phase.sh 2 --reverse
-
-# Check what's applied:
-./patch/apply.sh --status
+# Reverse:
+./patch/apply-phase.sh 1 --reverse
+./patch/apply-phase.sh all --reverse  # Reverse all
 ```
+
+## Test Environment
+
+- **GPU:** Intel Arc A770 16GB (card0, xe driver, PCI 8086:56a0)
+- **Secondary:** AMD RX 580 8GB (card1, amdgpu — not used for SYCL)
+- **CPU:** AMD Ryzen 7 5800X, 32GB DDR4
+- **OS:** CachyOS, kernel 6.19.10
+- **oneAPI:** 2025.3.2, DPC++ compiler 2025.3.2
+- **Build:** `-DGGML_SYCL=ON -DGGML_VULKAN=OFF -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx -DCMAKE_BUILD_TYPE=Release`
+
+## Benchmark Results (Clean Run, 2026-04-15)
+
+**Method:** Same prompt ("Write a short poem about a cat."), `-ngl 99 --device SYCL0 -c 2048 -n 128 --reasoning off`, fresh build per phase.
+
+### Qwen3.5-9B (dense, fits entirely in VRAM)
+
+| Config | Q4_0 Gen t/s | Q4_0 Prompt t/s | Q8_0 Gen t/s | Q8_0 Prompt t/s |
+|--------|-------------|-----------------|-------------|-----------------|
+| Baseline | 29.4 | 17.6 | 28.6 | 20.7 |
+| +Phase 1 (graph) | 29.7 | 20.0 | 29.0 | 20.7 |
+| +Phase 2 (kernel) | 29.8 | 19.8 | 29.0 | 20.6 |
+| +Phase 4 (host-copy) | 29.6 | 19.9 | 29.5 | 20.4 |
+
+**Analysis:**
+- All results within ~1 t/s noise floor — no significant regression or improvement
+- Phase 1 gives a modest prompt processing improvement (+2.4 t/s on Q4_0)
+- The 9B dense model fits entirely in A770 VRAM, so sync/graph/reorder optimizations
+  don't exercise the bottleneck path these patches target
+
+### Qwen3.5-35B-A3B (MoE, `--cpu-moe`)
+
+| Config | Status |
+|--------|--------|
+| Baseline (unpatched) | ✅ Works (15.2 t/s gen from earlier run) |
+| +Phase 1 (graph) | ❌ **CRASH**: `async_malloc` in `opt_for_reorder` |
+
+**Critical Finding:** Phase 1 (enabling SYCL graph by default) crashes on the 35B MoE model.
+The crash occurs in `opt_for_reorder` → `async_malloc` during graph computation. The graph
+path triggers async memory allocation that fails on Arc A770. This confirms the original
+developer's rationale for disabling graphs by default — the async malloc path is broken
+for this hardware/workload combination.
 
 ## Phases
 
-### Phase 1 — SYCL Sync (safest, highest impact)
-| Patch | File | Change | Decision |
-|-------|------|--------|----------|
-| 0001 | ggml-sycl.cpp:217 | Graph default 1→0 | Approved 3/3 |
+### Phase 1 — SYCL Graph Default ⚠️ CRASHES ON MoE
+| Patch | File | Change | Status |
+|-------|------|--------|--------|
+| 0001 | ggml-sycl.cpp:217 | Graph default 1→0 | ⚠️ Crashes 35B MoE |
 
-Enables SYCL graph execution by default. Eliminates 8 blocking `.wait()` calls.
-Expected 10-30% token generation speedup for single-GPU dense LLMs.
+Enables SYCL graph execution by default. Works on small dense models but crashes
+on 35B MoE with `async_malloc` failure in `opt_for_reorder`. The original default
+of disabled (1) was correct for Arc A770.
 
-### Phase 2 — SYCL Kernel Tuning (depends on Phase 1)
-| Patch | File | Change | Decision |
-|-------|------|--------|----------|
-| 0001 | common.hpp:90-91 | VER_GEN12 1M→1200, VER_GEN13→1300 | Approved 3/3 |
-| 0002 | presets.hpp:57,60 | DMMV_X 32→64, MMV_Y 1→2 | Approved 3/3, needs bench |
-| 0003 | common.hpp:106,109 | DMMV_X 32→64, MMV_Y 1→2 | Approved 3/3, needs bench |
+### Phase 2 — SYCL Kernel Tuning ✅ Neutral
+| Patch | File | Change | Status |
+|-------|------|--------|--------|
+| 0001 | common.hpp:90-91 | VER_GEN12 1M→1200, VER_GEN13→1300 | ✅ Neutral |
+| 0002 | presets.hpp:57,60 | DMMV_X 32→64, MMV_Y 1→2 | ✅ Neutral |
+| 0003 | common.hpp:106,109 | DMMV_X 32→64, MMV_Y 1→2 | ✅ Neutral |
 
-Fixes the VER_GEN12 placeholder (1M) that routed all Intel GPUs to NVIDIA Ampere paths.
-Tunes DMMV thread parameters for Arc hardware. Expected 5-15% additional improvement.
+Fixes VER_GEN12 placeholder but shows no measurable impact on 9B dense model.
+Needs testing on MoE or larger models to evaluate properly. DMMV_X=64 vs 32
+is within noise on this workload.
 
-### Phase 3 — Vulkan Intel (independent of Phase 1/2)
-| Patch | File | Change | Decision |
-|-------|------|--------|----------|
-| 0001 | ggml-vulkan.cpp:302,349 | Arc 140T device-ID Xe2 override | Approved 1/3 |
+### Phase 3 — Vulkan Intel ✅ Independent
+| Patch | File | Change | Status |
+|-------|------|--------|--------|
+| 0001 | ggml-vulkan.cpp | Arc 140T Xe2 override | ⏳ Not tested (no spirv-headers) |
 
-Fixes Arrow Lake H misdetection as non-Xe2. Enables cooperative matrix.
-Only affects Arc 140T systems.
+### Phase 4 — Host-Buffer Copy ✅ Neutral
+| Patch | File | Change | Status |
+|-------|------|--------|--------|
+| 0001 | ggml-sycl.cpp | mmap workaround opt-in | ✅ Neutral on 9B |
 
-## Testing Protocol
-
-On Intel Arc GPU test machine:
-
-```bash
-cd repos
-
-# Apply one phase
-./patch/apply-phase.sh 1
-
-# Build
-source /opt/intel/oneapi/setvars.sh
-cmake -B build -DGGML_SYCL=ON -DCMAKE_C_COMPILER=icx -DCMAKE_CXX_COMPILER=icpx \
-  -DCMAKE_BUILD_TYPE=Release -DGGML_AVX2=ON -DGGML_AVX=ON -DGGML_FMA=ON -DGGML_F16C=ON
-cmake --build build -j$(nproc)
-
-# Test
-ctest --test-dir build --output-on-failure
-
-# Benchmark before/after each phase
-./build/bin/llama-bench -m <model> -ngl 99 -p 512 -n 128
-```
+Removes blanket Linux host-buffer double-copy. Neutral on 9B dense model that
+fits in VRAM. Should help on models that stress the host→device copy path.
 
 ## Council Deliberations
 
 Stored in `../logs/` (gitignored). Key files:
-- `logs/decisions.md` — All 6 council decisions with rationale
-- `logs/M-sync-overhead-20260415.md` — Agent-M sync analysis
-- `logs/K-kernel-tuning-20260415.md` — Agent-K kernel tuning analysis
-- `logs/M-review-K-20260415.md` — Cross-review
-- `logs/K-review-M-20260415.md` — Cross-review (caught memset_tensor error)
+- `logs/decisions.md` — All council decisions with rationale
+- `logs/test-machine-megumin.md` — Test machine environment and benchmarks
+- `logs/M-sync-overhead-*.md` — Agent-M sync analysis
+- `logs/K-kernel-tuning-*.md` — Agent-K kernel tuning analysis
+- `logs/M-review-K-*.md`, `logs/K-review-M-*.md` — Cross-reviews
 
-## Deferred to Future Phases
+## Key Lesson
 
-- Q4_K DMMV reorder (medium complexity)
-- Q6_K DMMV reorder (medium complexity)
-- Q5_K reorder for both DMMV and MMVQ (hard)
-- Host-buffer double-copy elimination
-- Async memory ops decoupled from graph
+The Arc A770 bottleneck for token generation is NOT primarily in the areas we patched.
+The 9B dense model achieves ~29 t/s gen which is close to theoretical bandwidth for
+Q4_0 (~28-30 t/s expected for 2GB model at 512 GB/s bandwidth). The real performance
+gap vs NVIDIA/AMD may be in:
+1. MoE expert routing overhead (not exercised by dense models)
+2. Memory bandwidth utilization during attention (not just matmul)
+3. Driver/runtime overhead in the xe/Level Zero stack
