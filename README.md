@@ -17,6 +17,10 @@ The root causes are multi-layered: missing kernel optimizations in `llama.cpp`, 
 
 - **[Empirical Findings](empirical_findings.md)** — Real-world benchmarks and configurations from an Arc A770 + RX 580 system running llama.cpp with Qwen3.5-35B-A3B MoE. Includes driver setup (xe vs i915), SYCL/Vulkan status, performance tables, and working/broken configuration matrix.
 
+## Summary of Findings
+
+**[`overview.md`](overview.md)** — Cross-verified synthesis of all three agent overviews. Every major claim was checked against live GitHub issues/PRs and the actual source code in `repos/`. Includes confirmed findings, one correction to a research document (K-quant block sizes), and a clear breakdown of what is solid vs. uncertain.
+
 ## Overviews
 
 Each overview was independently produced by a different LLM, analyzing community issues, kernel source code, driver stacks, and benchmark data:
